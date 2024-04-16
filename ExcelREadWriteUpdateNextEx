@@ -1,0 +1,139 @@
+import pandas as pd
+import openpyxl 
+import win32com.client
+# Read the active range of data from the specified sheet
+role_name='CV'
+role_name_External='External User Data Access'
+role_name_internal='Internal User Data Access'
+role_code_internal='Internal User Data Access'
+role_code_External='ICR_NGG_DATA_ACCESS_INTERNAL'
+input_file1_path='c:\\Dev\\Python\\ExcelVBA\\fn1.xlsx'
+input_file1_sheet_name ='Sheet1'
+input_file2_path='c:\\Dev\\Python\\ExcelVBA\\fn2.xlsx'
+input_file3_path='c:\\Dev\\Python\\ExcelVBA\\fn3.xlsx'
+input_approver_path1='c:\\Dev\\Python\\ExcelVBA\\Approver.xlsx'
+output_file1_path='c:\\Dev\\Python\\ExcelVBA\\O1.xlsx'
+
+input_file2_sheet_name = 'Sheet1'  # Replace with the name of your sheet
+input_file3_sheet_name ='Sheet1'
+input_approver_sheet_name ='Sheet1'
+output_file1_sheet1='app'
+output_file1_sheet2='fixeddata'
+#if file already open, has to close it
+excel = win32com.client.Dispatch("Excel.Application")
+wb = excel.Workbooks.Open(output_file1_path)
+try:
+    wb.Close(False)  # Close the workbook without saving changes
+except:
+    pass
+excel.Quit()
+
+df1 = pd.read_excel(input_file1_path, sheet_name=input_file1_sheet_name, usecols=None, skiprows=None)
+df2 = pd.read_excel(input_file2_path, sheet_name=input_file2_sheet_name, usecols=None, skiprows=None)
+df3 = pd.read_excel(input_file3_path, sheet_name=input_file3_sheet_name, usecols=None, skiprows=None)
+dfApprover = pd.read_excel(input_approver_path1, sheet_name=input_approver_sheet_name, usecols=None, skiprows=None)
+# existing_data = pd.read_excel(output_file1_path, sheet_name=None, usecols=None, skiprows=None)
+# existing_data = pd.read_excel(output_file2_path='c:\\Dev\\Python\\ExcelVBA\\bulkO.xlsx'
+
+df2[ ['LastName', 'FirstName'] ]= df2['OwnerNameP'].str.split(',',n=1, expand=True)
+#df2['IdWithchar']= df2[11].str.slice(start=1)
+
+df2['IdWithchar']= df2['EmpId'].str.slice(start=1)
+
+
+df6 = df3.iloc[:, [2,4,5]].head()
+df6.insert(1, '', '')
+df6.insert(4, 'Add or Remove', 'ADD')
+# Create a new DataFrame
+
+merged_df = pd.merge(df2, df3, on='OpKey', how='inner')
+dfApprover = pd.concat([dfApprover] * len(merged_df), ignore_index=True)
+Newmerged_df = pd.concat([merged_df, dfApprover], axis=1)
+final_df = Newmerged_df[['OpDsc_x', 'OpDsc_y','LastName','FirstName','EmpId','EmpType','AppFirstName','AppLastName','AppEmpNum','AppEmpType']]
+
+  #for other tab
+melted = pd.melt(df1, id_vars='Des', value_vars=['OID', 'OName', 'AID1', 'Aname2'])
+    # Drop duplicate rows based on 'FlexCenter', 'value', and 'variable'
+dfresultSix = melted.drop_duplicates(subset=['Des', 'value', 'variable'], keep='first')
+# Rename the columns
+dfresultSix.columns = ['Des', 'Employee ID', 'Employee Name']
+
+dfresultSix.rename(columns = {'Employee ID':'EmpId'}, inplace = True) 
+
+concatenated_depts = dfresultSix.groupby('EmpId')['Des'].agg(' | '.join)
+
+# Create a new DataFrame with concatenated departments
+df_emp_role_concatinate = dfresultSix[['EmpId', 'Employee Name']].drop_duplicates().merge(concatenated_depts, left_on='EmpId', right_index=True, how='left')
+
+df2.insert(13, 'Add or Remove', 'ADD')
+df2.insert(14, 'rolename', '')
+df2.insert(15, 'rolecode', '')
+# Condition to check
+condition = df2['EmpType'] == role_name
+# Update the 'Test_Result' column based on the condition
+df2.loc[condition, 'rolename'] = role_name_internal
+df2.loc[~condition, 'rolename'] = role_name_External
+df2.loc[condition, 'rolecode'] = role_code_internal
+df2.loc[~condition, 'rolecode'] = role_code_External
+
+dfARE = df2[['IdWithchar', 'EmpType','OwnerNameP','EmpId','rolename','rolecode','Add or Remove']]
+approle_merged_df = dfARE.merge(df_emp_role_concatinate[['EmpId', 'Des']], how='left', on='EmpId')
+
+print(dfresultSix)  
+#dfresultSix.insert(1, '', '')
+#dfresultSix.insert(8, 'Add or Remove', 'ADD')
+dfresultSix[ ['LastName', 'FirstName'] ]= dfresultSix['Employee Name'].str.split(',',n=1, expand=True)
+
+
+workbook = openpyxl.load_workbook(output_file1_path)
+worksheet = workbook.active  # Get the active worksheet
+
+# Find the last row and column with data
+last_row = worksheet.max_row
+last_column = worksheet.max_column
+
+
+start_row = 4
+active_range = f"A{start_row}:{openpyxl.utils.get_column_letter(last_column)}{last_row}"
+
+# Clear the active data range, preserving the header row
+for row in worksheet.iter_rows(min_row=start_row, min_col=1, max_row=last_row, max_col=last_column):
+    for cell in row:
+        cell.value = None
+
+# Save the changes to the workbook
+workbook.save(output_file1_path)
+
+
+# Write the new DataFrame to a new sheet in the existing file
+with pd.ExcelWriter(output_file1_path, mode='a', engine='openpyxl', if_sheet_exists='overlay') as writer:
+    Newmerged_df.to_excel(writer, sheet_name='New Sheet', startrow=0, header=True, index=False)
+
+# Write part of the new DataFrame to an existing sheet in the file
+# existing_sheet = existing_data['fixeddata']
+# start_row = existing_sheet.shape[0] + 2  # Start writing after the existing data and an empty row
+
+with pd.ExcelWriter(output_file1_path, mode='a', engine='openpyxl', if_sheet_exists='overlay') as writer:
+    final_df.to_excel(writer, sheet_name='app', startrow=4, header=False, index=False)
+
+with pd.ExcelWriter(output_file1_path, mode='a', engine='openpyxl', if_sheet_exists='overlay') as writer:
+    final_df.to_excel(writer, sheet_name='fixeddata', startrow=4, header=False, index=False)
+
+with pd.ExcelWriter(output_file1_path, mode='a', engine='openpyxl', if_sheet_exists='overlay') as writer:
+    df6.to_excel(writer, sheet_name='six', startrow=4, header=False, index=False)
+
+with pd.ExcelWriter(output_file1_path, mode='a', engine='openpyxl', if_sheet_exists='overlay') as writer:
+    dfresultSix.to_excel(writer, sheet_name='five', startrow=4, header=False, index=False)
+#dfARE = df2.iloc[:, [12,10,9,11,14,15,7]].head()
+#AppId ProjectName ProjectDesc SubAppame  ...                                           FirstName 
+
+
+'''
+
+output_file2_path='c:\\Dev\\Python\\ExcelVBA\\bulkO.xlsx'
+output_file2_sheet1='ARE'
+
+ith pd.ExcelWriter(output_file2_path, mode='a', engine='openpyxl', if_sheet_exists='overlay') as writer:
+    dfARE.to_excel(writer, sheet_name=output_file2_sheet1, startrow=2, header=False, index=False)
+
+'''
